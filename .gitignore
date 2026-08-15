@@ -1,0 +1,16 @@
+/dataPreprocessing/preprocessed_data/
+
+# Generated experiment artifacts are local and reproducible.
+/results/
+
+# Safety net for outputs produced by older versions of the scripts.
+/src/exps/*.csv
+/src/exps/*.png
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+
+# IDE files
+.idea/
+src/.idea/
