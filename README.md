@@ -14,7 +14,6 @@ The code requires Python 3.10 or newer and the following main packages:
 - `pmlayer` for HLL
 - Gurobi and `gurobipy` for the optional exact certification routines
 
-On the development machine, the configured Conda environment is `MNN`.
 
 ## Datasets
 
