@@ -39,9 +39,9 @@ from src.exp_common import (
     fold_standardize_y,
     training_target_range,
     eval_for_early_stop,
-    eval_regression_raw_metrics,
-    eval_classification_metrics,
-    summarize_predictive_metrics,
+    eval_regression_nrmse,
+    eval_classification_error_rate,
+    summarize_predictive_metric,
 )
 from src.result_paths import experiment_result_file
 
@@ -58,7 +58,6 @@ UMNN_WEIGHT_DECAY = 1e-2
 RESULT_COLUMNS = [
     "Dataset", "Task Type", "Metric Name",
     "Metric Mean", "Metric Std",
-    "Secondary Metric Name", "Secondary Metric Mean", "Secondary Metric Std",
     "NumOfParameters", "Best Configuration"
 ]
 
@@ -370,7 +369,7 @@ def cross_validate(
     task_type: str,
     monotonic_indices,
     n_splits: int = N_SPLITS
-) -> Tuple[list, Any, Dict[str, Tuple[float, float]], int]:
+) -> Tuple[list, Dict[str, Tuple[float, float]], int]:
 
     if task_type == "classification":
         y = ensure_binary_labels(y)
@@ -378,10 +377,7 @@ def cross_validate(
     device = require_cuda_device()
     kf = make_cv_splitter(task_type, n_splits, GLOBAL_SEED)
 
-    if task_type == "regression":
-        mae_list, nrmse_list = [], []
-    else:
-        err_list, auroc_list = [], []
+    metric_scores = []
 
     mono_collect = {"random": [], "train": [], "test": []}
     n_params = None
@@ -440,15 +436,12 @@ def cross_validate(
 
         # performance
         if task_type == "regression":
-            _, nrmse, mae = eval_regression_raw_metrics(
+            metric_score = eval_regression_nrmse(
                 model, val_loader, device, y_mean, y_std, y_range
             )
-            mae_list.append(float(mae))
-            nrmse_list.append(float(nrmse))
         else:
-            err, auroc = eval_classification_metrics(model, val_loader, device)
-            err_list.append(float(err))
-            auroc_list.append(float(auroc))
+            metric_score = eval_classification_error_rate(model, val_loader, device)
+        metric_scores.append(float(metric_score))
 
         # Structure-based methods are monotonic by construction; the paper does not
         # report empirical Random/Train/Test audits for this family.
@@ -495,9 +488,7 @@ def cross_validate(
     avg_mono = {k: (float(np.mean(v)), float(np.std(v))) if len(v) > 0 else (0.0, 0.0)
                 for k, v in mono_collect.items()}
 
-    if task_type == "regression":
-        return mae_list, nrmse_list, avg_mono, int(n_params or 0)
-    return err_list, auroc_list, avg_mono, int(n_params or 0)
+    return metric_scores, avg_mono, int(n_params or 0)
 
 
 def process_dataset(loader: Callable):
@@ -512,11 +503,11 @@ def process_dataset(loader: Callable):
         X_dev, y_dev, task_type, monotonic_indices, n_trials=N_TRIALS
     )
 
-    scores, nrmse_scores, mono_metrics, n_params = cross_validate(
+    metric_scores, mono_metrics, n_params = cross_validate(
         X_eval, y_eval, best_config, task_type, monotonic_indices, n_splits=N_SPLITS
     )
 
-    return scores, nrmse_scores, mono_metrics, best_config, n_params, task_type
+    return metric_scores, mono_metrics, best_config, n_params, task_type
 
 
 def prepare_results_file(results_file, resume: bool) -> set[str]:
@@ -591,28 +582,10 @@ def main(resume: bool = False):
         print(f"\nProcessing dataset: {loader.__name__} with UMNN...")
 
 
-        scores, nrmse_scores, mono_metrics, best_config, n_params, task_type = process_dataset(loader)
+        metric_scores, mono_metrics, best_config, n_params, task_type = process_dataset(loader)
 
-
-        if task_type == "regression":
-            metric_name = "NRMSE"
-            final_mean = float(np.mean(nrmse_scores))
-            final_std = float(np.std(nrmse_scores))
-        else:
-            metric_name = "Error Rate"
-            final_mean = float(np.mean(scores))
-            final_std = float(np.std(scores))
-
-
-        (
-            metric_name,
-            final_mean,
-            final_std,
-            secondary_metric_name,
-            secondary_mean,
-            secondary_std,
-        ) = summarize_predictive_metrics(
-            task_type, scores, nrmse_scores
+        metric_name, final_mean, final_std = summarize_predictive_metric(
+            task_type, metric_scores
         )
 
         write_results_to_csv(
@@ -622,9 +595,6 @@ def main(resume: bool = False):
             metric_name=metric_name,
             metric_mean=final_mean,
             metric_std=final_std,
-            secondary_metric_name=secondary_metric_name,
-            secondary_metric_mean=secondary_mean,
-            secondary_metric_std=secondary_std,
             n_params=n_params,
             best_config=best_config,
             mono_metrics=None

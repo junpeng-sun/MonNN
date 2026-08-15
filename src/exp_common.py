@@ -7,9 +7,7 @@ import numpy as np
 import torch
 from sklearn.metrics import (
     mean_squared_error,
-    mean_absolute_error,
     accuracy_score,
-    roc_auc_score,
 )
 from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 
@@ -239,20 +237,21 @@ def eval_for_early_stop(
 
 
 @torch.no_grad()
-def eval_regression_raw_metrics(
+def eval_regression_nrmse(
     model,
     loader,
     device: torch.device,
     y_mean: float,
     y_std: float,
     y_range: float,
-) -> Tuple[float, float, float]:
+) -> float:
     """
-    Regression final reporting:
+    Return the final regression NRMSE on the original target scale.
+
     inverse-transform standardized predictions back to RAW y scale,
-    compute RMSE, range-normalized RMSE, and MAE. The normalization denominator
-    is the raw target range of the corresponding outer training partition,
-    supplied explicitly to prevent leakage from the test partition.
+    compute RMSE internally, and normalize it by the raw target range of the
+    corresponding outer training partition. The training-derived denominator
+    is supplied explicitly to prevent leakage from the test partition.
     """
     model.eval()
     preds, trues = [], []
@@ -273,18 +272,16 @@ def eval_regression_raw_metrics(
     rmse = float(np.sqrt(mean_squared_error(trues_raw, preds_raw)))
     if y_range <= 0.0:
         raise ValueError("y_range must be positive.")
-    nrmse = float(rmse / y_range)
-    mae = float(mean_absolute_error(trues_raw, preds_raw))
-    return rmse, nrmse, mae
+    return float(rmse / y_range)
 
 
 @torch.no_grad()
-def eval_classification_metrics(
+def eval_classification_error_rate(
     model,
     loader,
     device: torch.device,
-) -> Tuple[float, float]:
-    """Return error rate and AUROC from raw binary-classification logits."""
+) -> float:
+    """Return the binary-classification error rate from raw logits."""
     model.eval()
     logits, trues = [], []
     for X, y in loader:
@@ -296,43 +293,29 @@ def eval_classification_metrics(
     trues = ensure_binary_labels(np.concatenate(trues, axis=0)).astype(np.int64)
     probabilities = 1.0 / (1.0 + np.exp(-np.clip(logits, -50, 50)))
     predictions = (probabilities > 0.5).astype(np.int64)
-    error_rate = float(1.0 - accuracy_score(trues, predictions))
-    auroc = float(roc_auc_score(trues, probabilities))
-    return error_rate, auroc
+    return float(1.0 - accuracy_score(trues, predictions))
 
 
-def summarize_predictive_metrics(
+def summarize_predictive_metric(
     task_type: str,
-    first_scores,
-    second_scores,
-) -> Tuple[str, float, float, str, float, float]:
-    """Summarize primary and secondary metrics under the shared CSV schema.
-
-    Cross-validation functions return ``(MAE, NRMSE)`` for regression and
-    ``(error rate, AUROC)`` for classification. NRMSE and error rate remain the
-    primary metrics used by the paper's rank-based statistical analysis.
-    """
-    first = np.asarray(first_scores, dtype=np.float64)
-    second = np.asarray(second_scores, dtype=np.float64)
-    if first.size == 0 or second.size == 0:
-        raise ValueError("Predictive metric score lists must be non-empty.")
-    if not np.all(np.isfinite(first)) or not np.all(np.isfinite(second)):
+    scores,
+) -> Tuple[str, float, float]:
+    """Summarize the paper's single predictive metric for a task."""
+    values = np.asarray(scores, dtype=np.float64)
+    if values.size == 0:
+        raise ValueError("Predictive metric scores must be non-empty.")
+    if not np.all(np.isfinite(values)):
         raise ValueError("Predictive metric scores must be finite.")
 
     if task_type == "regression":
-        primary_name, primary_values = "NRMSE", second
-        secondary_name, secondary_values = "MAE", first
+        metric_name = "NRMSE"
     elif task_type == "classification":
-        primary_name, primary_values = "Error Rate", first
-        secondary_name, secondary_values = "AUROC", second
+        metric_name = "Error Rate"
     else:
         raise ValueError(f"Unknown task type: {task_type}")
 
     return (
-        primary_name,
-        float(np.mean(primary_values)),
-        float(np.std(primary_values)),
-        secondary_name,
-        float(np.mean(secondary_values)),
-        float(np.std(secondary_values)),
+        metric_name,
+        float(np.mean(values)),
+        float(np.std(values)),
     )

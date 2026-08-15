@@ -36,9 +36,9 @@ from src.exp_common import (
     fold_standardize_y,
     training_target_range,
     eval_for_early_stop,
-    eval_regression_raw_metrics,
-    eval_classification_metrics,
-    summarize_predictive_metrics,
+    eval_regression_nrmse,
+    eval_classification_error_rate,
+    summarize_predictive_metric,
 )
 from src.result_paths import experiment_result_file
 
@@ -272,10 +272,7 @@ def cross_validate(
     mono_metrics = {"random": [], "train": [], "test": []}
     n_params = None
 
-    if task_type == "regression":
-        mae_list, nrmse_list = [], []
-    else:
-        err_list, auroc_list = [], []
+    metric_scores = []
 
     for fold, (train_idx, val_idx) in enumerate(kf.split(X, y)):
 
@@ -312,16 +309,13 @@ def cross_validate(
 
         # performance metric
         if task_type == "regression":
-            _, nrmse, mae = eval_regression_raw_metrics(
+            metric_score = eval_regression_nrmse(
                 model, val_loader, device, y_mean=y_mean, y_std=y_std,
                 y_range=y_range
             )
-            mae_list.append(mae)
-            nrmse_list.append(nrmse)
         else:
-            err, auroc = eval_classification_metrics(model, val_loader, device)
-            err_list.append(err)
-            auroc_list.append(auroc)
+            metric_score = eval_classification_error_rate(model, val_loader, device)
+        metric_scores.append(float(metric_score))
 
         # Structure-based methods are monotonic by construction; the paper does not
         # report empirical Random/Train/Test audits for this family.
@@ -374,10 +368,7 @@ def cross_validate(
         for k, v in mono_metrics.items()
     }
 
-    if task_type == "regression":
-        return mae_list, nrmse_list, avg_mono, int(n_params or 0)
-    else:
-        return err_list, auroc_list, avg_mono, int(n_params or 0)
+    return metric_scores, avg_mono, int(n_params or 0)
 
 
 
@@ -396,7 +387,6 @@ def main():
         writer.writerow([
             "Dataset", "Task Type", "Metric Name",
             "Metric Mean", "Metric Std",
-            "Secondary Metric Name", "Secondary Metric Mean", "Secondary Metric Std",
             "NumOfParameters", "Best Configuration"
         ])
 
@@ -416,32 +406,12 @@ def main():
         )
 
 
-        scores, nrmse_scores, mono_metrics, n_params = cross_validate(
+        metric_scores, mono_metrics, n_params = cross_validate(
             X_eval, y_eval, best_config, task_type, monotonic_indices, n_splits=N_SPLITS
         )
 
-
-        if task_type == "regression":
-            metric_name = "NRMSE"
-
-            final_mean = float(np.mean(nrmse_scores))
-            final_std = float(np.std(nrmse_scores))
-        else:
-            metric_name = "Error Rate"
-
-            final_mean = float(np.mean(scores))
-            final_std = float(np.std(scores))
-
-
-        (
-            metric_name,
-            final_mean,
-            final_std,
-            secondary_metric_name,
-            secondary_mean,
-            secondary_std,
-        ) = summarize_predictive_metrics(
-            task_type, scores, nrmse_scores
+        metric_name, final_mean, final_std = summarize_predictive_metric(
+            task_type, metric_scores
         )
 
         write_results_to_csv(
@@ -451,9 +421,6 @@ def main():
             metric_name=metric_name,
             metric_mean=final_mean,
             metric_std=final_std,
-            secondary_metric_name=secondary_metric_name,
-            secondary_metric_mean=secondary_mean,
-            secondary_metric_std=secondary_std,
             n_params=n_params,
             best_config=best_config,
             mono_metrics=None

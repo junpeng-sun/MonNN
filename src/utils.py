@@ -180,9 +180,6 @@ def write_results_to_csv(
     metric_name: str,
     metric_mean: float,
     metric_std: float,
-    secondary_metric_name: str,
-    secondary_metric_mean: float,
-    secondary_metric_std: float,
     n_params: int,
     best_config: Dict,
     mono_metrics: Optional[Dict]
@@ -193,16 +190,6 @@ def write_results_to_csv(
 
     m_mean = f"{metric_mean:.4f}" if isinstance(metric_mean, (int, float)) else metric_mean
     m_std = f"{metric_std:.4f}" if isinstance(metric_std, (int, float)) else metric_std
-    secondary_mean = (
-        f"{secondary_metric_mean:.4f}"
-        if isinstance(secondary_metric_mean, (int, float))
-        else secondary_metric_mean
-    )
-    secondary_std = (
-        f"{secondary_metric_std:.4f}"
-        if isinstance(secondary_metric_std, (int, float))
-        else secondary_metric_std
-    )
 
 
     row = [
@@ -211,9 +198,6 @@ def write_results_to_csv(
         metric_name,
         m_mean,
         m_std,
-        secondary_metric_name,
-        secondary_mean,
-        secondary_std,
         n_params,
         best_config_str
     ]
