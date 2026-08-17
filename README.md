@@ -38,24 +38,3 @@ corresponding count summaries).
 Official sources: [Adult](https://archive.ics.uci.edu/dataset/2/adult),
 [Default of Credit Card Clients](https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients),
 and [BlogFeedback](https://archive.ics.uci.edu/dataset/304/blogfeedback).
-
-## Reproducibility notes
-
-- Dataset-specific monotonic feature definitions are centralized in
-  `dataPreprocessing/loaders.py`.
-- Decreasing constrained inputs are sign-reversed and all constrained inputs
-  are reordered to the beginning of the feature matrix.
-- Feature scaling and regression-target standardization are fitted from the
-  outer training partition in every seeded run.
-- NRMSE uses the raw target range of the corresponding training partition.
-- All real datasets retain the same fixed outer test partition across five
-  seeded final fits.
-- PWL uses the original empirical negative-divergence penalty; MixupPWL uses
-  training/random mixtures; UniformPWL draws 1,024 fresh uniform points at
-  every optimization step with derivative margin 0.2.
-- UMNN retains the upstream generalized model's exponential positive
-  parameterization. Its learning rate is selected from `1e-4`, `5e-4`, and
-  `1e-3`; Schedule-Free AdamW uses weight decay `1e-2`, and gradients are
-  value-clipped to `[-1, 1]` after backpropagation for numerical stability.
-- All numerical tables must be regenerated after changing any dataset metadata,
-  model guarantee, metric, or split implementation.
